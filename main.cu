@@ -21,7 +21,9 @@ performVulkanFFT(VkGPU *vkGPU, VkFFTApplication *app, VkFFTLaunchParams *launchP
     std::cout << totTime << std::endl;
     return resFFT;
 }
-VkFFTResult performVulkanFFTiFFT(VkGPU* vkGPU, VkFFTApplication* app, VkFFTLaunchParams* launchParams, uint64_t num_iter) {
+
+VkFFTResult
+performVulkanFFTiFFT(VkGPU *vkGPU, VkFFTApplication *app, VkFFTLaunchParams *launchParams, uint64_t num_iter) {
     VkFFTResult resFFT = VKFFT_SUCCESS;
 
     cudaError_t res = cudaSuccess;
@@ -295,17 +297,16 @@ VkFFTResult vkfftExecZ2Z(VkGPU *vkGPU, VkFFTApplication appZ2Z, VkFFTConfigurati
                          cufftDoubleComplex *idata,
                          cufftDoubleComplex *odata,
                          int direction, cudaStream_t *stream) {
-    uint64_t num_iter = (((uint64_t)4096 * 1024.0 * 1024.0) / *configuration.bufferSize > 1000) ? 1000 : (uint64_t)((uint64_t)4096 * 1024.0 * 1024.0) / *configuration.bufferSize;
-    VkFFTLaunchParams launchParams={};
-    auto resFFT = performVulkanFFTiFFT(vkGPU, &appZ2Z, &launchParams,num_iter);
+    uint64_t num_iter = (((uint64_t) 4096 * 1024.0 * 1024.0) / *configuration.bufferSize > 1000) ? 1000 :
+                        (uint64_t) ((uint64_t) 4096 * 1024.0 * 1024.0) / *configuration.bufferSize;
+    VkFFTLaunchParams launchParams = {};
+    auto resFFT = performVulkanFFTiFFT(vkGPU, &appZ2Z, &launchParams, num_iter);
     return resFFT;
 }
 
 int main() {
     VkGPU vkGPU = {};
-    cufftHandle planR2C_;
     cudaStream_t *t;
-    cudaStreamCreate(t);
 
     CUresult res = CUDA_SUCCESS;
     cudaError_t res2 = cudaSuccess;
@@ -319,19 +320,42 @@ int main() {
     if (res != CUDA_SUCCESS) return VKFFT_ERROR_FAILED_TO_GET_DEVICE;
     res = cuCtxCreate(&vkGPU.context, 0, (int) vkGPU.device);
     if (res != CUDA_SUCCESS) return VKFFT_ERROR_FAILED_TO_CREATE_CONTEXT;
-    get_VkFFT_double(&vkGPU);
 
     std::cout << "Second Test" << std::endl;
+    double *signal = (double *) malloc(sizeof(double) * 256 * 10);
+    int dim_arry[3] = {1, 1, 1};
+    for (long long int i = 0; i < 256 * 10; i++)
+        signal[i] = i % 100;
     cufftHandle plan;
+    cufftDoubleComplex *data;
+    data = static_cast<cufftDoubleComplex *>(malloc(sizeof(cufftDoubleComplex) * 256 * 10));
 
-    cufftComplex *data;
-    cudaMalloc((void**)&data, sizeof(cufftComplex)*256*10);
+
     /* Create a 1D FFT plan. */
-    cufftPlan1d(&plan, 256, CUFFT_Z2Z, 10);
+    cufftPlanMany(&plan, 256, dim_arry, dim_arry, 1, 0,
+                  dim_arry, 1, 0, CUFFT_Z2Z, 10);
     /* Use the CUFFT plan to transform the signal in place. */
-    cufftExecC2C(plan, data, data, CUFFT_FORWARD);
+    cufftExecZ2Z(plan, data, data, CUFFT_FORWARD);
     /* Destroy the CUFFT plan. */
+    std::cout << data[0].x << data[0].y << std::endl;
+
     cufftDestroy(plan);
     cudaFree(data);
+
+    cufftDoubleComplex *data1;
+    data1 = static_cast<cufftDoubleComplex *>(malloc(sizeof(cufftDoubleComplex) * 256 * 10));
+
+    for (long int i = 0; i < 256 * 10; i++) {
+        data1[i].x = signal[i];
+        data1[i].y = 0.;
+    }
+    VkFFTConfiguration configuration = {};
+    VkFFTApplication appZ2Z = {};
+    vkfftPlanMany(&vkGPU, configuration, appZ2Z, 256, dim_arry, dim_arry, 1, 0,
+                  dim_arry, 1, 0, CUFFT_Z2Z, 10, t);
+    vkfftExecZ2Z(&vkGPU, appZ2Z, configuration, data1, data1, CUFFT_FORWARD, t);
+
+    std::cout << data1[1].x << data1[1].y << std::endl;
+
     return 0;
 }
